@@ -11,7 +11,7 @@ import signal
 import psutil
 import aiofiles
 
-from openai import AsyncOpenAI
+from .. import llm_provider
 from ..tools import SupervisorTools
 from ..prompts.continuation_context_prompt import get_continuation_context_prompt
 from ..prompts.summarization_prompt import get_summarization_prompt
@@ -68,7 +68,7 @@ class SupervisorOrchestrator:
                 session_dir=session_dir,
                 task_config=config,
                 supervisor_model=supervisor_model,
-                api_key=os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY"),
+                api_key=llm_provider.get_api_key(),
                 codex_binary=codex_binary
             )
         
@@ -88,14 +88,7 @@ class SupervisorOrchestrator:
         
         self.continuation_count = 0
         
-        # Try OPENROUTER_API_KEY first, fallback to OPENAI_API_KEY
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-        base_url = "https://openrouter.ai/api/v1" if os.getenv("OPENROUTER_API_KEY") else "https://api.openai.com/v1"
-        
-        self.client = AsyncOpenAI(
-            base_url=base_url,
-            api_key=api_key
-        )
+        self.client = llm_provider.create_client()
         
         self.conversation_history = []
         self.running = False
@@ -280,19 +273,12 @@ class SupervisorOrchestrator:
         summary_prompt = get_summarization_prompt(formatted_content)
 
         try:
-            # Use correct parameters based on API provider
-            completion_params = {
-                "model": self.context_manager.summarization_model,
-                "messages": [{"role": "user", "content": summary_prompt}],
-            }
-            
-            # Only set temperature and max_tokens for OpenRouter
-            if os.getenv("OPENROUTER_API_KEY"):
-                completion_params["temperature"] = 0.1
-                completion_params["max_tokens"] = 10000
-            else:
-                completion_params["max_completion_tokens"] = 10000
-                
+            completion_params = llm_provider.completion_params(
+                model=self.context_manager.summarization_model,
+                messages=[{"role": "user", "content": summary_prompt}],
+                max_tokens=10000,
+                temperature=0.1,
+            )
             response = await self.context_manager.client.chat.completions.create(**completion_params)
             
             return response.choices[0].message.content or "Summary generation failed"
@@ -320,17 +306,13 @@ class SupervisorOrchestrator:
         """Switch to a random different model."""
         import random
         
-        # Different model lists based on API provider
-        if os.getenv("OPENROUTER_API_KEY"):
-            # Use environment variable or default OpenRouter models
-            default_models = "anthropic/claude-sonnet-4,openai/o3,anthropic/claude-opus-4,google/gemini-2.5-pro,openai/o3-pro"
-            available_models = os.getenv("OPENROUTER_AVAILABLE_MODELS", default_models).split(",")
-        else:
-            # Use environment variable or default OpenAI direct models
-            default_models = "o3,gpt-5"
-            available_models = os.getenv("OPENAI_AVAILABLE_MODELS", default_models).split(",") 
+        # Model list depends on the configured API provider
+        available_models = llm_provider.get_available_models()
         if self.supervisor_model in available_models:
             available_models.remove(self.supervisor_model)
+        if not available_models:
+            logging.info("🔄 No alternative models available for switching; keeping current model")
+            return
         
         new_model = random.choice(available_models)
         old_model = self.supervisor_model
@@ -367,19 +349,13 @@ class SupervisorOrchestrator:
         """Get a response from the supervisor model."""
         try:
             # Use correct parameters based on API provider
-            completion_params = {
-                "model": self.supervisor_model,
-                "messages": self.conversation_history,
-                "tools": self.tools.get_tool_definitions(),
-                "tool_choice": "auto",
-            }
-            
-            # Only set max_tokens for OpenRouter
-            if os.getenv("OPENROUTER_API_KEY"):
-                completion_params["max_tokens"] = 10000
-            else:
-                completion_params["max_completion_tokens"] = 10000
-                
+            completion_params = llm_provider.completion_params(
+                model=self.supervisor_model,
+                messages=self.conversation_history,
+                max_tokens=10000,
+                tools=self.tools.get_tool_definitions(),
+                tool_choice="auto",
+            )
             response = await self.client.chat.completions.create(**completion_params)
             
             message = response.choices[0].message
@@ -694,19 +670,13 @@ class SupervisorOrchestrator:
                 )
             
             # Use correct parameters based on API provider
-            completion_params = {
-                "model": self.supervisor_model,
-                "messages": self.conversation_history,
-                "tools": self.tools.get_tool_definitions(),
-                "tool_choice": "auto",
-            }
-            
-            # Only set max_tokens for OpenRouter
-            if os.getenv("OPENROUTER_API_KEY"):
-                completion_params["max_tokens"] = 10000
-            else:
-                completion_params["max_completion_tokens"] = 10000
-                
+            completion_params = llm_provider.completion_params(
+                model=self.supervisor_model,
+                messages=self.conversation_history,
+                max_tokens=10000,
+                tools=self.tools.get_tool_definitions(),
+                tool_choice="auto",
+            )
             response = await self.client.chat.completions.create(**completion_params)
             
             message = response.choices[0].message
@@ -715,7 +685,7 @@ class SupervisorOrchestrator:
             if not content.strip() and not message.tool_calls:
                 try:
                     response_dict = response.model_dump()
-                    logging.error(f"❌ EMPTY RESPONSE from {self.supervisor_model}. Full OpenRouter response: {response_dict}")
+                    logging.error(f"❌ EMPTY RESPONSE from {self.supervisor_model}. Full API response: {response_dict}")
                 except Exception as e:
                     logging.error(f"❌ EMPTY RESPONSE from {self.supervisor_model}. Could not serialize response: {e}")
             

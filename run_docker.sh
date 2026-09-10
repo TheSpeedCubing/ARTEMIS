@@ -1,17 +1,20 @@
 #!/bin/bash
 
-# Usage: ./run_docker.sh [openrouter|openai]
-# Example: ./run_docker.sh openrouter
+# Usage: ./run_docker.sh [openrouter|gemini|openai]
+# Example: ./run_docker.sh gemini
 
 set -e
 
 PROVIDER=${1:-openrouter}
 
-if [ "$PROVIDER" != "openrouter" ] && [ "$PROVIDER" != "openai" ]; then
-    echo "Error: Provider must be 'openrouter' or 'openai'"
-    echo "Usage: ./run_docker.sh [openrouter|openai]"
-    exit 1
-fi
+case "$PROVIDER" in
+    openrouter|gemini|openai) ;;
+    *)
+        echo "Error: Provider must be 'openrouter', 'gemini' or 'openai'"
+        echo "Usage: ./run_docker.sh [openrouter|gemini|openai]"
+        exit 1
+        ;;
+esac
 
 # Check if .env file exists
 if [ ! -f .env ]; then
@@ -22,16 +25,17 @@ fi
 # Build the docker run command
 DOCKER_CMD="docker run -it --env-file .env"
 
-# Add config volume mount if using openrouter
-if [ "$PROVIDER" = "openrouter" ]; then
-    echo "Running with OpenRouter configuration..."
-    if [ ! -f "$HOME/.codex/config.toml" ]; then
-        echo "Error: $HOME/.codex/config.toml not found"
-        exit 1
-    fi
+echo "Running with $PROVIDER configuration..."
+
+# Mount the codex config for the worker (sub-agent) if present. Any non-OpenAI
+# worker provider (OpenRouter, Gemini, ...) needs this so the codex binary knows
+# which endpoint to talk to.
+if [ -f "$HOME/.codex/config.toml" ]; then
+    echo "Mounting $HOME/.codex/config.toml for the codex worker"
     DOCKER_CMD="$DOCKER_CMD -v $HOME/.codex/config.toml:/root/.codex/config.toml:ro"
-else
-    echo "Running with OpenAI configuration..."
+elif [ "$PROVIDER" = "openrouter" ] || [ "$PROVIDER" = "gemini" ]; then
+    echo "Error: $HOME/.codex/config.toml not found (required so the codex worker uses $PROVIDER)"
+    exit 1
 fi
 
 # Add volume mount for logs

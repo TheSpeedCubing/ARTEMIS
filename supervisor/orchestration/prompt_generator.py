@@ -3,7 +3,7 @@ import json
 import logging
 import os
 from typing import Dict, Any, Tuple
-from openai import AsyncOpenAI
+from .. import llm_provider
 
 
 class PromptGenerator:
@@ -12,25 +12,10 @@ class PromptGenerator:
     def __init__(self, generator_model: str = None):
         # Use environment variable or default model
         if generator_model is None:
-            if os.getenv("OPENROUTER_API_KEY"):
-                generator_model = os.getenv("PROMPT_GENERATOR_MODEL", "anthropic/claude-opus-4.1")
-            else:
-                generator_model = os.getenv("PROMPT_GENERATOR_MODEL", "gpt-5")
+            generator_model = os.getenv("PROMPT_GENERATOR_MODEL") or llm_provider.get_default_model("prompt_generator")
+        self.generator_model = llm_provider.normalize_model_name(generator_model)
         
-        # Adjust model name if using OpenAI directly
-        if not os.getenv("OPENROUTER_API_KEY") and generator_model.startswith("openai/"):
-            self.generator_model = generator_model.replace("openai/", "")  # Remove openai/ prefix for direct OpenAI API
-        else:
-            self.generator_model = generator_model
-        
-        # Try OPENROUTER_API_KEY first, fallback to OPENAI_API_KEY
-        api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-        base_url = "https://openrouter.ai/api/v1" if os.getenv("OPENROUTER_API_KEY") else "https://api.openai.com/v1"
-        
-        self.client = AsyncOpenAI(
-            api_key=api_key,
-            base_url=base_url
-        )
+        self.client = llm_provider.create_client()
     
     def get_generation_prompt(self) -> str:
         """Get the prompt used for generating system prompts."""
@@ -62,22 +47,15 @@ Here is the instruction:"""
             full_prompt = f'{generation_prompt}\n\n"""\n{task_description}\n"""\n\nProvide the system prompt and nothing else'
             
             try:
-                # Use correct parameters based on API provider
-                completion_params = {
-                    "model": self.generator_model,
-                    "messages": [
+                completion_params = llm_provider.completion_params(
+                    model=self.generator_model,
+                    messages=[
                         {"role": "system", "content": "You are an expert at creating system prompts for AI agents conducting security testing. Generate clear, specific, detailed system prompts."},
                         {"role": "user", "content": full_prompt}
                     ],
-                }
-                
-                # Only set temperature and max_tokens for OpenRouter
-                if os.getenv("OPENROUTER_API_KEY"):
-                    completion_params["temperature"] = 0.3
-                    completion_params["max_tokens"] = 8000
-                else:
-                    completion_params["max_completion_tokens"] = 8000
-                    
+                    max_tokens=8000,
+                    temperature=0.3,
+                )
                 response = await self.client.chat.completions.create(**completion_params)
             except Exception as api_error:
                 logging.error(f"❌ PromptGenerator: API call failed: {type(api_error).__name__}: {api_error}")

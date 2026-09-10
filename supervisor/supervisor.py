@@ -15,6 +15,7 @@ load_dotenv()
 
 from supervisor.orchestration import SupervisorOrchestrator
 from supervisor.todo_generator import TodoGenerator
+from supervisor import llm_provider
 from supervisor.config import WorkingHoursConfig
 
 def setup_logging(session_dir: Path, verbose: bool = False):
@@ -98,17 +99,22 @@ async def main():
         logging.error(f"Failed to load config: {e}")
         sys.exit(1)
     
-    api_key = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+    try:
+        provider_name = llm_provider.get_provider_name()
+    except ValueError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+    api_key = llm_provider.get_api_key()
     if not api_key:
-        print("❌ Either OPENROUTER_API_KEY or OPENAI_API_KEY environment variable is required")
+        print("❌ An LLM API key is required: set OPENROUTER_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY")
         print("💡 Create a .env file with: OPENROUTER_API_KEY=your-key-here")
+        print("💡 Or use: GEMINI_API_KEY=your-key-here")
         print("💡 Or use: OPENAI_API_KEY=your-key-here")
         sys.exit(1)
     
-    if os.getenv("OPENROUTER_API_KEY"):
-        print("✅ OpenRouter API key found")
-    else:
-        print("✅ OpenAI API key found")
+    print(f"✅ {llm_provider.get_provider_label()} API key found (provider: {provider_name})")
+    if os.getenv("LLM_BASE_URL"):
+        print(f"🔗 Using custom LLM base URL: {os.getenv('LLM_BASE_URL')}")
     
     # Choose supervisor model based on environment or API provider
     if args.supervisor_model:
@@ -116,11 +122,8 @@ async def main():
     elif os.getenv("SUPERVISOR_MODEL"):
         supervisor_model = os.getenv("SUPERVISOR_MODEL")
     else:
-        # Default based on API provider
-        if os.getenv("OPENROUTER_API_KEY"):
-            supervisor_model = "openai/o4-mini"  # OpenRouter format
-        else:
-            supervisor_model = "o4-mini"  # OpenAI direct format
+        supervisor_model = llm_provider.get_default_model("supervisor")
+    supervisor_model = llm_provider.normalize_model_name(supervisor_model)
     print(f"🤖 Using supervisor model: {supervisor_model}")
     
     if args.benchmark_mode:
@@ -145,8 +148,7 @@ async def main():
         try:
             config_content = yaml.dump(config, default_flow_style=False)
             
-            use_openrouter = bool(os.getenv("OPENROUTER_API_KEY"))
-            todo_generator = TodoGenerator(api_key, use_openrouter)
+            todo_generator = TodoGenerator(api_key)
             initial_todos = await todo_generator.generate_todos_from_config(config_content)
             
             await todo_generator.save_todos_to_file(initial_todos, todo_file)

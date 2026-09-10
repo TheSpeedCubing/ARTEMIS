@@ -51,7 +51,7 @@ cp .env.example .env
 ```
 
 Required environment variables:
-- `OPENROUTER_API_KEY` or `OPENAI_API_KEY` - For the supervisor and LLM calls
+- One LLM API key for the supervisor and LLM calls: `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` (the provider is auto-detected; force it with `LLM_PROVIDER`)
 - `SUBAGENT_MODEL` - Model to use for spawned Codex instances (e.g., `anthropic/claude-sonnet-4`)
 
 ### Quick Test Run
@@ -92,8 +92,30 @@ cp .env.example .env
 ```
 
 Required environment variables:
-- `OPENROUTER_API_KEY` or `OPENAI_API_KEY` - For the supervisor and LLM calls
+- One LLM API key for the supervisor and LLM calls: `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` (the provider is auto-detected; force it with `LLM_PROVIDER`)
 - `SUBAGENT_MODEL` - Model to use for spawned Codex instances (e.g., `anthropic/claude-sonnet-4`)
+
+### Choosing an LLM Provider (Supervisor)
+
+The supervisor and all of its helper LLM calls (summarization, routing, TODO and
+prompt generation, triage) speak the OpenAI-compatible chat completions API and
+work with three providers out of the box. Set exactly one key in `.env`:
+
+| Provider   | Env key              | Default supervisor model |
+|------------|----------------------|--------------------------|
+| Google Gemini | `GEMINI_API_KEY`  | `gemini-2.5-pro`         |
+| OpenRouter | `OPENROUTER_API_KEY` | `openai/o4-mini`         |
+| OpenAI     | `OPENAI_API_KEY`     | `o4-mini`                |
+
+The provider is auto-detected from whichever key is present (priority:
+OpenRouter, then Gemini, then OpenAI). Force a choice with `LLM_PROVIDER=gemini`.
+To use any other OpenAI-compatible endpoint, set `LLM_BASE_URL`. Override
+individual models with `SUPERVISOR_MODEL`, `SUMMARIZATION_MODEL`, `ROUTER_MODEL`,
+`PROMPT_GENERATOR_MODEL`, and the `TODO_GENERATOR_*` variables (see
+`.env.example`).
+
+Note: this selects the model for the **supervisor**. The spawned Codex worker
+instances are configured separately via `~/.codex/config.toml` and `SUBAGENT_MODEL`.
 
 ### Codex Configuration for OpenRouter
 
