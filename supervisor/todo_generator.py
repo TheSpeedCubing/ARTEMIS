@@ -162,7 +162,7 @@ if __name__ == "__main__":
     from . import llm_provider
     api_key = llm_provider.get_api_key()
     if not api_key:
-        print("Error: An LLM API key must be set (OPENROUTER_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY)")
+        print("Error: An LLM API key must be set (OPENROUTER_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY)")
         sys.exit(1)
     
     asyncio.run(generate_pentest_todos(config_file, output_file, api_key))

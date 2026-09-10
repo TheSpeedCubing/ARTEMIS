@@ -8,6 +8,7 @@ components don't need to hard-code provider-specific logic.
 Supported providers (selected via ``LLM_PROVIDER`` or auto-detected from keys):
 
 - ``openrouter``: ``OPENROUTER_API_KEY`` -> https://openrouter.ai/api/v1
+- ``claude``:     ``ANTHROPIC_API_KEY``  -> Anthropic's OpenAI-compatible endpoint
 - ``gemini``:     ``GEMINI_API_KEY``     -> Google's OpenAI-compatible endpoint
 - ``openai``:     ``OPENAI_API_KEY``     -> https://api.openai.com/v1
 
@@ -22,6 +23,7 @@ from openai import AsyncOpenAI
 
 
 GEMINI_OPENAI_BASE_URL = "https://generativelanguage.googleapis.com/v1beta/openai/"
+CLAUDE_OPENAI_BASE_URL = "https://api.anthropic.com/v1/"
 
 PROVIDERS: Dict[str, Dict[str, Any]] = {
     "openrouter": {
@@ -39,6 +41,25 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
         "available_models_env": "OPENROUTER_AVAILABLE_MODELS",
         "todo_model_env": "TODO_GENERATOR_OPENROUTER_MODEL",
         # OpenRouter accepts the classic chat-completions parameters
+        "max_tokens_param": "max_tokens",
+        "supports_temperature": True,
+    },
+    "claude": {
+        "label": "Anthropic Claude",
+        "env_key": "ANTHROPIC_API_KEY",
+        "base_url": CLAUDE_OPENAI_BASE_URL,
+        "defaults": {
+            "supervisor": "claude-haiku-4-5",
+            "summarization": "claude-haiku-4-5",
+            "router": "claude-haiku-4-5",
+            "todo": "claude-haiku-4-5",
+            "prompt_generator": "claude-haiku-4-5",
+        },
+        "available_models": "claude-haiku-4-5,claude-sonnet-5,claude-opus-5",
+        "available_models_env": "CLAUDE_AVAILABLE_MODELS",
+        "todo_model_env": "TODO_GENERATOR_CLAUDE_MODEL",
+        # Anthropic's compatibility layer accepts both max_tokens and
+        # max_completion_tokens; temperature is supported in the 0-1 range.
         "max_tokens_param": "max_tokens",
         "supports_temperature": True,
     },
@@ -80,7 +101,7 @@ PROVIDERS: Dict[str, Dict[str, Any]] = {
 }
 
 # Auto-detection order when LLM_PROVIDER is not set
-_DETECTION_ORDER = ["openrouter", "gemini", "openai"]
+_DETECTION_ORDER = ["openrouter", "claude", "gemini", "openai"]
 
 
 def get_provider_name() -> Optional[str]:
@@ -134,13 +155,16 @@ def get_default_model(role: str) -> str:
 
 
 def normalize_model_name(model: str) -> str:
-    """Strip an ``openai/`` prefix when talking to OpenAI directly.
+    """Strip an OpenRouter-style vendor prefix when talking to a vendor directly.
 
-    OpenRouter-style names such as ``openai/o4-mini`` are only valid on
-    OpenRouter; other providers expect the bare model id.
+    OpenRouter-style names such as ``openai/o4-mini`` or
+    ``anthropic/claude-haiku-4-5`` are only valid on OpenRouter; other providers
+    expect the bare model id.
     """
-    if get_provider_name() != "openrouter" and model.startswith("openai/"):
-        return model[len("openai/"):]
+    if get_provider_name() != "openrouter":
+        for prefix in ("openai/", "anthropic/"):
+            if model.startswith(prefix):
+                return model[len(prefix):]
     return model
 
 

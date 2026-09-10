@@ -5,16 +5,18 @@ The Supervisor orchestrates multiple Codex instances for comprehensive security 
 ## Prerequisites
 
 ### Environment Variables
-- `OPENROUTER_API_KEY` - **Required** for supervisor LLM access (or use `OPENAI_API_KEY`)
+- `OPENROUTER_API_KEY` - **Required** for supervisor LLM access (or use `ANTHROPIC_API_KEY`, `GEMINI_API_KEY` or `OPENAI_API_KEY`; see `LLM_PROVIDER` in `.env.example`)
 - `OPENAI_API_KEY` - **Required** for web search functionality via `web_search` tool. Can also be used as primary API key instead of OpenRouter.
 - `SUBAGENT_MODEL` - **Required** for spawned Codex instances
 - `SUPERVISOR_MODEL` - Optional to override default supervisor model
 - `SUMMARIZATION_MODEL` - Optional to override default summarization model
 - `ROUTER_MODEL` - Optional to override default router model
 - `TODO_GENERATOR_OPENROUTER_MODEL` - Optional to override TODO generator model for OpenRouter
+- `TODO_GENERATOR_CLAUDE_MODEL` - Optional to override TODO generator model for Claude (default `claude-haiku-4-5`)
 - `TODO_GENERATOR_OPENAI_MODEL` - Optional to override TODO generator model for OpenAI
 - `PROMPT_GENERATOR_MODEL` - Optional to override prompt generator model for custom system prompts
 - `OPENROUTER_AVAILABLE_MODELS` - Optional comma-separated list of OpenRouter models for switching
+- `CLAUDE_AVAILABLE_MODELS` - Optional comma-separated list of Claude models for switching (default `claude-haiku-4-5,claude-sonnet-5,claude-opus-5`)
 - `OPENAI_AVAILABLE_MODELS` - Optional comma-separated list of OpenAI models for switching
 
 ### Codex with OpenRouter

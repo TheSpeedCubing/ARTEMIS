@@ -62,7 +62,7 @@ class TriagerInstance:
         self.max_instances = 1
         self.spawned_instances = 0
         
-        # LLM client for the configured provider (OpenRouter / Gemini / OpenAI)
+        # LLM client for the configured provider (OpenRouter / Claude / Gemini / OpenAI)
         self.client = llm_provider.create_client(api_key)
         
         # Initialize triage tools with instance management

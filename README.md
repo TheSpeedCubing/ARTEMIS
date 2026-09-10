@@ -51,7 +51,7 @@ cp .env.example .env
 ```
 
 Required environment variables:
-- One LLM API key for the supervisor and LLM calls: `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` (the provider is auto-detected; force it with `LLM_PROVIDER`)
+- One LLM API key for the supervisor and LLM calls: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` (the provider is auto-detected; force it with `LLM_PROVIDER`)
 - `SUBAGENT_MODEL` - Model to use for spawned Codex instances (e.g., `anthropic/claude-sonnet-4`)
 
 ### Quick Test Run
@@ -92,23 +92,27 @@ cp .env.example .env
 ```
 
 Required environment variables:
-- One LLM API key for the supervisor and LLM calls: `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` (the provider is auto-detected; force it with `LLM_PROVIDER`)
+- One LLM API key for the supervisor and LLM calls: `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OPENROUTER_API_KEY`, or `OPENAI_API_KEY` (the provider is auto-detected; force it with `LLM_PROVIDER`)
 - `SUBAGENT_MODEL` - Model to use for spawned Codex instances (e.g., `anthropic/claude-sonnet-4`)
 
 ### Choosing an LLM Provider (Supervisor)
 
 The supervisor and all of its helper LLM calls (summarization, routing, TODO and
 prompt generation, triage) speak the OpenAI-compatible chat completions API and
-work with three providers out of the box. Set exactly one key in `.env`:
+work with four providers out of the box. Set exactly one key in `.env`:
 
 | Provider   | Env key              | Default supervisor model |
 |------------|----------------------|--------------------------|
+| Anthropic Claude | `ANTHROPIC_API_KEY` | `claude-haiku-4-5`   |
 | Google Gemini | `GEMINI_API_KEY`  | `gemini-2.5-pro`         |
 | OpenRouter | `OPENROUTER_API_KEY` | `openai/o4-mini`         |
 | OpenAI     | `OPENAI_API_KEY`     | `o4-mini`                |
 
 The provider is auto-detected from whichever key is present (priority:
-OpenRouter, then Gemini, then OpenAI). Force a choice with `LLM_PROVIDER=gemini`.
+OpenRouter, then Claude, then Gemini, then OpenAI). Force a choice with
+`LLM_PROVIDER=claude`. Claude is reached through Anthropic's OpenAI-compatible
+endpoint (`https://api.anthropic.com/v1/`); use bare model ids such as
+`claude-haiku-4-5`, `claude-sonnet-5` or `claude-opus-5`.
 To use any other OpenAI-compatible endpoint, set `LLM_BASE_URL`. Override
 individual models with `SUPERVISOR_MODEL`, `SUMMARIZATION_MODEL`, `ROUTER_MODEL`,
 `PROMPT_GENERATOR_MODEL`, and the `TODO_GENERATOR_*` variables (see
@@ -137,6 +141,30 @@ network_access = true
 EOF
 ```
 
+### Codex Configuration for Claude
+
+To point the codex worker at Claude directly, use Anthropic's OpenAI-compatible
+chat completions endpoint in `~/.codex/config.toml`:
+
+```bash
+mkdir -p ~/.codex
+cat > ~/.codex/config.toml <<'EOF'
+model_provider = "claude"
+
+[model_providers.claude]
+name = "Anthropic Claude"
+base_url = "https://api.anthropic.com/v1"
+env_key = "ANTHROPIC_API_KEY"
+wire_api = "chat"
+
+[sandbox]
+mode = "workspace-write"
+network_access = true
+EOF
+```
+
+Set `SUBAGENT_MODEL=claude-haiku-4-5` (or another Claude model id) in `.env`.
+
 ### Running with Docker
 
 Use the provided `run_docker.sh` script:
@@ -145,12 +173,15 @@ Use the provided `run_docker.sh` script:
 # Run with OpenRouter (mounts ~/.codex/config.toml)
 ./run_docker.sh openrouter
 
+# Run with Claude (mounts ~/.codex/config.toml)
+./run_docker.sh claude
+
 # Run with OpenAI only (no config mount needed)
 ./run_docker.sh openai
 ```
 
 The script will:
-- Mount your `~/.codex/config.toml` (if using OpenRouter)
+- Mount your `~/.codex/config.toml` (if using OpenRouter, Claude or Gemini)
 - Mount the `./logs` directory for persistent logs
 - Use your `.env` file for API keys
 - Run a 10-minute test on an easy CTF challenge

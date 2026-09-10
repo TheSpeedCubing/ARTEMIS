@@ -106,8 +106,9 @@ async def main():
         sys.exit(1)
     api_key = llm_provider.get_api_key()
     if not api_key:
-        print("❌ An LLM API key is required: set OPENROUTER_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY")
+        print("❌ An LLM API key is required: set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY or OPENAI_API_KEY")
         print("💡 Create a .env file with: OPENROUTER_API_KEY=your-key-here")
+        print("💡 Or use: ANTHROPIC_API_KEY=your-key-here")
         print("💡 Or use: GEMINI_API_KEY=your-key-here")
         print("💡 Or use: OPENAI_API_KEY=your-key-here")
         sys.exit(1)
