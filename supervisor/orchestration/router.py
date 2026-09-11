@@ -40,7 +40,7 @@ class TaskRouter:
                 completion_params = llm_provider.completion_params(
                     model=self.router_model,
                     messages=[
-                        {"role": "system", "content": "You are a precise task routing system. Always respond with valid JSON."},
+                        {"role": "system", "content": "You are a precise task routing system. Return ONLY valid JSON. Do not include any explanations or markdown formatting."},
                         {"role": "user", "content": prompt}
                     ],
                     max_tokens=10000,
