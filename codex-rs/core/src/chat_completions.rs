@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::time::Duration;
 
 use bytes::Bytes;
@@ -233,7 +234,13 @@ async fn process_chat_sse<S>(
         active: bool,
     }
 
-    let mut fn_call_state = FunctionCallState::default();
+    // A single response may contain multiple parallel tool calls. On the chat
+    // streaming wire each call carries an integer `index`; fragments must be
+    // accumulated per-index, otherwise arguments from distinct calls get
+    // concatenated into one buffer (e.g. `{...}{...}`), which is invalid JSON
+    // and gets rejected by the provider on the next request. Keyed by index
+    // and ordered so we emit calls in the order the model produced them.
+    let mut fn_call_states: BTreeMap<i64, FunctionCallState> = BTreeMap::new();
     let mut assistant_text = String::new();
     let mut reasoning_text = String::new();
 
@@ -290,6 +297,21 @@ async fn process_chat_sse<S>(
                         text: std::mem::take(&mut reasoning_text),
                     }]),
                     encrypted_content: None,
+                };
+                let _ = tx_event.send(Ok(ResponseEvent::OutputItemDone(item))).await;
+            }
+
+            // Flush any pending tool calls if the stream closed without a
+            // terminal `finish_reason: tool_calls` chunk.
+            for state in fn_call_states.values() {
+                if !state.active {
+                    continue;
+                }
+                let item = ResponseItem::FunctionCall {
+                    id: None,
+                    name: state.name.clone().unwrap_or_default(),
+                    arguments: state.arguments.clone(),
+                    call_id: state.call_id.clone().unwrap_or_default(),
                 };
                 let _ = tx_event.send(Ok(ResponseEvent::OutputItemDone(item))).await;
             }
@@ -355,30 +377,38 @@ async fn process_chat_sse<S>(
                 }
             }
 
-            // Handle streaming function / tool calls.
+            // Handle streaming function / tool calls. A delta may carry one or
+            // more tool-call fragments; each is identified by its `index` so we
+            // accumulate name/arguments/call_id into the matching per-index
+            // state instead of a single shared buffer.
             if let Some(tool_calls) = choice
                 .get("delta")
                 .and_then(|d| d.get("tool_calls"))
                 .and_then(|tc| tc.as_array())
-                && let Some(tool_call) = tool_calls.first()
             {
-                // Mark that we have an active function call in progress.
-                fn_call_state.active = true;
+                for tool_call in tool_calls {
+                    let index = tool_call.get("index").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let state = fn_call_states.entry(index).or_default();
 
-                // Extract call_id if present.
-                if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
-                    fn_call_state.call_id.get_or_insert_with(|| id.to_string());
-                }
+                    // Mark that we have an active function call in progress.
+                    state.active = true;
 
-                // Extract function details if present.
-                if let Some(function) = tool_call.get("function") {
-                    if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
-                        fn_call_state.name.get_or_insert_with(|| name.to_string());
+                    // Extract call_id if present.
+                    if let Some(id) = tool_call.get("id").and_then(|v| v.as_str()) {
+                        state.call_id.get_or_insert_with(|| id.to_string());
                     }
 
-                    if let Some(args_fragment) = function.get("arguments").and_then(|a| a.as_str())
-                    {
-                        fn_call_state.arguments.push_str(args_fragment);
+                    // Extract function details if present.
+                    if let Some(function) = tool_call.get("function") {
+                        if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
+                            state.name.get_or_insert_with(|| name.to_string());
+                        }
+
+                        if let Some(args_fragment) =
+                            function.get("arguments").and_then(|a| a.as_str())
+                        {
+                            state.arguments.push_str(args_fragment);
+                        }
                     }
                 }
             }
@@ -386,7 +416,7 @@ async fn process_chat_sse<S>(
             // Emit end-of-turn when finish_reason signals completion.
             if let Some(finish_reason) = choice.get("finish_reason").and_then(|v| v.as_str()) {
                 match finish_reason {
-                    "tool_calls" if fn_call_state.active => {
+                    "tool_calls" if fn_call_states.values().any(|s| s.active) => {
                         // First, flush the terminal raw reasoning so UIs can finalize
                         // the reasoning stream before any exec/tool events begin.
                         if !reasoning_text.is_empty() {
@@ -401,15 +431,21 @@ async fn process_chat_sse<S>(
                             let _ = tx_event.send(Ok(ResponseEvent::OutputItemDone(item))).await;
                         }
 
-                        // Then emit the FunctionCall response item.
-                        let item = ResponseItem::FunctionCall {
-                            id: None,
-                            name: fn_call_state.name.clone().unwrap_or_else(|| "".to_string()),
-                            arguments: fn_call_state.arguments.clone(),
-                            call_id: fn_call_state.call_id.clone().unwrap_or_else(String::new),
-                        };
+                        // Then emit one FunctionCall response item per parallel
+                        // tool call, in index order.
+                        for state in fn_call_states.values() {
+                            if !state.active {
+                                continue;
+                            }
+                            let item = ResponseItem::FunctionCall {
+                                id: None,
+                                name: state.name.clone().unwrap_or_default(),
+                                arguments: state.arguments.clone(),
+                                call_id: state.call_id.clone().unwrap_or_default(),
+                            };
 
-                        let _ = tx_event.send(Ok(ResponseEvent::OutputItemDone(item))).await;
+                            let _ = tx_event.send(Ok(ResponseEvent::OutputItemDone(item))).await;
+                        }
                     }
                     "stop" => {
                         // Regular turn without tool-call. Emit the final assistant message
@@ -449,7 +485,7 @@ async fn process_chat_sse<S>(
                     .await;
 
                 // Prepare for potential next turn (should not happen in same stream).
-                // fn_call_state = FunctionCallState::default();
+                // fn_call_states.clear();
 
                 return; // End processing for this SSE stream.
             }
