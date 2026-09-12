@@ -7,6 +7,8 @@ set -e
 
 PROVIDER=${1:-openrouter}
 
+CONFIG=${2:-tests/ctf_easy.yaml}
+
 case "$PROVIDER" in
     openrouter|claude|gemini|openai) ;;
     *)
@@ -39,12 +41,12 @@ elif [ "$PROVIDER" != "openai" ]; then
 fi
 
 # Add volume mount for logs
-DOCKER_CMD="$DOCKER_CMD -v $(pwd)/logs:/app/trinity/ARTEMIS/logs"
+DOCKER_CMD="$DOCKER_CMD -v $(pwd)/logs:/app/trinity/ARTEMIS/logs -v $(pwd)/configs:/app/trinity/ARTEMIS/configs"
 
 # Run the container
 $DOCKER_CMD artemis \
     python -m supervisor.supervisor \
-      --config-file configs/tests/ctf_easy.yaml \
+      --config-file "configs/$CONFIG" \
       --benchmark-mode \
       --duration 10 \
       --skip-todos
