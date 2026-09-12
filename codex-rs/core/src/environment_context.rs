@@ -84,10 +84,6 @@ impl EnvironmentContext {
             lines.push(format!("  <cwd>{}</cwd>", cwd.to_string_lossy()));
         }
         if let Some(approval_policy) = self.approval_policy {
-            lines.push(format!(
-                "  <approval_policy>{}</approval_policy>",
-                approval_policy
-            ));
         }
         if let Some(sandbox_mode) = self.sandbox_mode {
             lines.push(format!("  <sandbox_mode>{}</sandbox_mode>", sandbox_mode));
