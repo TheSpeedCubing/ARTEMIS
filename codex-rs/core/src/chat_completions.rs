@@ -58,7 +58,14 @@ pub(crate) async fn stream_chat_completions(
                         _ => {}
                     }
                 }
-                messages.push(json!({"role": role, "content": text}));
+                // Anthropic-compatible endpoints reject empty or
+                // whitespace-only text blocks ("text content blocks must
+                // contain non-whitespace text"). Skip messages that carry no
+                // textual content — an assistant turn that only issued a tool
+                // call is emitted separately as a FunctionCall item below.
+                if !text.trim().is_empty() {
+                    messages.push(json!({"role": role, "content": text}));
+                }
             }
             ResponseItem::FunctionCall {
                 name,
@@ -98,10 +105,18 @@ pub(crate) async fn stream_chat_completions(
                 }));
             }
             ResponseItem::FunctionCallOutput { call_id, output } => {
+                // A tool result must accompany its tool call, so it cannot be
+                // skipped. Substitute a placeholder when the tool produced no
+                // output, otherwise the empty text block is rejected.
+                let content = if output.content.trim().is_empty() {
+                    "(no output)".to_string()
+                } else {
+                    output.content.clone()
+                };
                 messages.push(json!({
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "content": output.content,
+                    "content": content,
                 }));
             }
             ResponseItem::CustomToolCall {
@@ -125,10 +140,15 @@ pub(crate) async fn stream_chat_completions(
                 }));
             }
             ResponseItem::CustomToolCallOutput { call_id, output } => {
+                let content = if output.trim().is_empty() {
+                    "(no output)".to_string()
+                } else {
+                    output.clone()
+                };
                 messages.push(json!({
                     "role": "tool",
                     "tool_call_id": call_id,
-                    "content": output,
+                    "content": content,
                 }));
             }
             ResponseItem::Reasoning { .. } | ResponseItem::Other => {
